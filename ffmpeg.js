@@ -8,7 +8,7 @@ const ffmpegArgs = [
   "-f", inputFormat,        
   "-i", "pipe:0",
 
-  "-c:v", "libx264",
+  "-c:v", "libx264",//Video Encoding
   "-crf", "16",      //Video Quality       
   "-preset", "slow", //Encoding Speed 
   //Decoding done by Player 
@@ -24,7 +24,7 @@ const ffmpegArgs = [
   "-g", "60",           
   "-sc_threshold", "0",//Disable Automation Key-Frames
 
-  "-c:a", "aac",
+  "-c:a", "aac",//Audio Encoding
   "-b:a", "192k",//Audio Quality
 
   "-fflags", "nobuffer",
@@ -58,8 +58,13 @@ export function stopFFmpeg(ffmpegProcess) {
   if (!ffmpegProcess) return;
   ffmpegProcess.stdin?.write('q');
 setTimeout(() => {
-    if (!ffmpegProcess.killed) {
+    if (!ffmpegProcess.exitCode) {
       ffmpegProcess.kill('SIGTERM');
     }
   }, 5000);
+  setTimeout(() => {
+    if (!ffmpegProcess.exitCode) {
+      ffmpegProcess.kill('SIGKILL');
+    }
+  }, 10000);
 }
