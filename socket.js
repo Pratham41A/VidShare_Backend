@@ -12,7 +12,6 @@ export function initIO() {
 
       if (!eventId || !["mp4", "webm"].includes(inputFormat)) {
         io.to(socket.id).emit("error", "Invalid Input Format");
-        socket.disconnect();
         return;
       }
 
@@ -20,45 +19,63 @@ export function initIO() {
       fs.mkdirSync(eventPath, { recursive: true });
       const ffmpegProcess = createFFmpeg({
         eventId,
-        inputFormat
+        inputFormat,
+        socket
       });  
       liveEvents.set(eventId,{ffmpegProcess,socketId:socket.id,status:'started'});
       startEvent(eventId);
       io.to(socket.id).emit("start", `Event Start : ${eventId}`);
     });
-    socket.on("data", async ({ eventId, eventData }) => {
+    socket.on("data", async ({ eventId, eventBuffer }) => {
         const liveEvent = liveEvents.get(eventId);
-        const buffer = Buffer.from(await eventData.arrayBuffer());
         if (liveEvent.ffmpegProcess.stdin.writable) {
-          liveEvent.ffmpegProcess.stdin.write(buffer);
+          liveEvent.ffmpegProcess.stdin.write(eventBuffer);
         }
     });
     socket.on("resume", ({ eventId,inputFormat }) => {
-    const ffmpegProcess =  createFFmpeg({
+      //DB Update
+      resumeEvent(eventId);
+      //Process Start
+      const ffmpegProcess =  createFFmpeg({
         eventId,
         inputFormat,
         socket
       })
+      //Map Update
       liveEvents.set(eventId,{ffmpegProcess,socketId:socket.id,status:'started'});
-      resumeEvent(eventId);
+      //Socket Notification
       io.to(socket.id).emit("start", `Event Start : ${eventId}`);
     });
     socket.on("pause", ({ eventId }) => {
-      socket.disconnect();
+      //DB Update
+      pauseEvent(eventId);
+      //Process End
+      stopFFmpeg(liveEvents.get(eventId).ffmpegProcess);
+      //Map Cleanup
       liveEvents.delete(eventId);
+      //Socket Notification
       io.to(socket.id).emit("pause", `Event Pause : ${eventId}`);
     })
     socket.on("stop", ({ eventId }) => {
-      socket.disconnect();
-      liveEvents.delete(eventId);
+      //DB Update
       endEvent(eventId);
+      //Process End
+      stopFFmpeg(liveEvents.get(eventId).ffmpegProcess);
+      //Map Cleanup
+      liveEvents.delete(eventId);
+      //Socket Notification
       io.to(socket.id).emit("stop", `Event Stop : ${eventId}`);
     });
     socket.on("disconnect", () => {
       for (const [eventId,liveEvent] of liveEvents) {
         if (liveEvent.socketId===socket.id) {
+          //DB Update
+          pauseEvent(eventId);
+          //Process End
           stopFFmpeg(liveEvent.ffmpegProcess);
-          pauseEvent(eventId)
+          //Map Cleanup
+          liveEvents.delete(eventId);
+          //Socket Notification
           io.to(socket.id).emit("pause", `Event Pause : ${eventId}`);
           return
         }
